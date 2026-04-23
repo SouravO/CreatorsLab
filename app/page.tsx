@@ -134,7 +134,7 @@ export default function Home() {
 
           <div className="col-span-12 md:col-span-3 flex flex-col gap-4">
             <p className="text-[10px] uppercase tracking-widest opacity-30">Connect</p>
-            {['Instagram', 'LinkedIn', 'YouTube', 'Twitter'].map((link) => (
+            {['Instagram', 'LinkedIn', 'YouTube', 'X'].map((link) => (
               <a key={link} href="#" className="text-xl font-bold uppercase hover:line-through transition-all">
                 {link}
               </a>

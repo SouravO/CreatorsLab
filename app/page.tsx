@@ -17,6 +17,7 @@ export default function Home() {
   const containerRef = useRef(null);
   const [testimonialIndex, setTestimonialIndex] = useState(0);
   const [testimonials, setTestimonials] = useState(fallbackTestimonials);
+  const [isDesktop, setIsDesktop] = useState(false);
   const { scrollYProgress } = useScroll({
     target: containerRef,
     offset: ["start start", "end end"],
@@ -25,6 +26,7 @@ export default function Home() {
   const scaleX = useSpring(scrollYProgress, { stiffness: 100, damping: 30 });
   const rotateGrid = useTransform(scrollYProgress, [0, 1], [0, 45]);
   const yTranslate = useTransform(scrollYProgress, [0, 1], [0, -150]);
+  const hasMultipleTestimonialBatches = testimonials.length > 3;
 
   const capabilities = [
     { id: "01", title: "Post-Production", desc: "Video Editing, Sound Design, and professional workflows in Premiere & Resolve.", img: "https://images.unsplash.com/photo-1574717024653-61fd2cf4d44d?q=80&w=1000" },
@@ -32,6 +34,16 @@ export default function Home() {
     { id: "03", title: "Visual Branding", desc: "Graphic design, Photoshop mastery, and building cohesive brand identities.", img: "https://images.unsplash.com/photo-1561070791-2526d30994b5?q=80&w=1000" },
     { id: "04", title: "Direction", desc: "Script writing, storytelling structures, and leading creative execution.", img: "https://images.unsplash.com/photo-1485846234645-a62644f84728?q=80&w=1000" },
   ];
+
+  useEffect(() => {
+    const desktopQuery = window.matchMedia("(min-width: 768px)");
+    const updateDesktopState = () => setIsDesktop(desktopQuery.matches);
+
+    updateDesktopState();
+    desktopQuery.addEventListener("change", updateDesktopState);
+
+    return () => desktopQuery.removeEventListener("change", updateDesktopState);
+  }, []);
 
   useEffect(() => {
     const loadTestimonials = async () => {
@@ -127,12 +139,12 @@ export default function Home() {
       </section>
 
       {/* 5. CAPABILITIES GRID */}
-      <section className="px-6 md:px-10 py-40">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-x-20 gap-y-32">
+      <section className="px-6 py-24 md:px-10 md:py-40">
+        <div className="grid grid-cols-1 gap-y-16 md:grid-cols-2 md:gap-x-20 md:gap-y-32">
           {capabilities.map((item, index) => (
             <motion.div 
               key={index}
-              style={{ y: index % 2 === 0 ? 0 : yTranslate }}
+              style={{ y: isDesktop && index % 2 !== 0 ? yTranslate : 0 }}
               className="group relative"
             >
               <div className="aspect-[4/3] overflow-hidden bg-zinc-200">
@@ -159,8 +171,8 @@ export default function Home() {
       
 
       {/* 5.5 TESTIMONIALS SECTION */}
-      <section className="px-6 md:px-10 py-32 border-t border-[#800000]/10 bg-[#f4f4f4]">
-        <div className="flex justify-between items-end mb-16">
+      <section className="px-6 py-20 md:px-10 md:py-32 border-t border-[#800000]/10 bg-[#f4f4f4]">
+        <div className="flex justify-between items-end mb-10 md:mb-16">
           <div>
             <p className="text-[10px] font-bold uppercase tracking-[0.3em] mb-4 text-[#800000]/60">{"// Peer_Reviews"}</p>
             <h2 className="text-5xl md:text-7xl font-black uppercase tracking-tighter">
@@ -168,25 +180,27 @@ export default function Home() {
             </h2>
           </div>
           
-          <div className="flex flex-wrap justify-end gap-3">
-            {testimonialIndex > 0 && (
-              <button
-                onClick={prevTestimonials}
-                className="group flex items-center gap-4 border border-[#800000] px-8 py-4 font-bold uppercase transition-colors hover:bg-[#800000] hover:text-[#f4f4f4]"
-              >
-                <span className="transition-transform group-hover:-translate-x-2">←</span>
-                <span>Prev Batch</span>
-              </button>
-            )}
+          {hasMultipleTestimonialBatches && (
+            <div className="hidden flex-wrap justify-end gap-3 md:flex">
+              {testimonialIndex > 0 && (
+                <button
+                  onClick={prevTestimonials}
+                  className="group flex items-center gap-3 border border-[#800000] px-6 py-3 text-sm font-bold uppercase transition-colors hover:bg-[#800000] hover:text-[#f4f4f4]"
+                >
+                  <span className="transition-transform group-hover:-translate-x-1">←</span>
+                  <span>Prev Batch</span>
+                </button>
+              )}
 
-            <button 
-              onClick={nextTestimonials}
-              className="group flex items-center gap-4 bg-[#800000] text-[#f4f4f4] px-8 py-4 font-bold uppercase hover:bg-black transition-colors"
-            >
-              <span>Next Batch</span>
-              <span className="group-hover:translate-x-2 transition-transform">→</span>
-            </button>
-          </div>
+              <button
+                onClick={nextTestimonials}
+                className="group flex items-center gap-3 bg-[#800000] px-6 py-3 text-sm font-bold uppercase text-[#f4f4f4] transition-colors hover:bg-black"
+              >
+                <span>Next Batch</span>
+                <span className="transition-transform group-hover:translate-x-1">→</span>
+              </button>
+            </div>
+          )}
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
@@ -215,6 +229,30 @@ export default function Home() {
             </motion.div>
           ))}
         </div>
+
+        {hasMultipleTestimonialBatches && (
+          <div className="mt-8 grid grid-cols-2 gap-3 md:hidden">
+            {testimonialIndex > 0 ? (
+              <button
+                onClick={prevTestimonials}
+                className="flex min-h-12 items-center justify-center gap-2 border border-[#800000] px-4 py-3 text-xs font-bold uppercase tracking-wide transition-colors hover:bg-[#800000] hover:text-[#f4f4f4]"
+              >
+                <span>←</span>
+                <span>Prev</span>
+              </button>
+            ) : (
+              <div />
+            )}
+
+            <button
+              onClick={nextTestimonials}
+              className="flex min-h-12 items-center justify-center gap-2 bg-[#800000] px-4 py-3 text-xs font-bold uppercase tracking-wide text-[#f4f4f4] transition-colors hover:bg-black"
+            >
+              <span>Next</span>
+              <span>→</span>
+            </button>
+          </div>
+        )}
       </section>
 
       {/* 6. FOOTER */}

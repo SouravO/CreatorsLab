@@ -1,10 +1,22 @@
 "use client";
 
 import { motion, useScroll, useTransform, useSpring } from "framer-motion";
-import { useRef } from "react";
+import { useEffect, useRef, useState } from "react";
+import { supabase, type Testimonial } from "@/lib/supabase";
+
+const fallbackTestimonials: Pick<Testimonial, "id" | "name" | "text">[] = [
+  { id: "fallback-1", name: "Arjun Mehta", text: "THE CURRICULUM IS BRUTALLY HONEST. I WENT FROM A HOBBYIST TO A PROFESSIONAL EDITOR IN WEEKS." },
+  { id: "fallback-2", name: "Sara Khan", text: "CREATORSLAB ISN'T A SCHOOL, IT'S A HIGH-PRESSURE PRODUCTION ENVIRONMENT THAT BUILDS REAL SKILLS." },
+  { id: "fallback-3", name: "Kevin Paul", text: "THE FOCUS ON VISUAL STORYTELLING CHANGED HOW I VIEW EVERY FRAME THROUGH THE LENS." },
+  { id: "fallback-4", name: "Riya Sharma", text: "FINALLY, A PLACE THAT VALUES CREATIVE EXECUTION OVER THEORETICAL NONSENSE. HIGHLY RECOMMENDED." },
+  { id: "fallback-5", name: "Leo Das", text: "THE MENTORSHIP HERE IS UNMATCHED. YOU LEARN THE BUSINESS SIDE OF CREATIVITY, NOT JUST THE TOOLS." },
+  { id: "fallback-6", name: "Mona Singh", text: "BEYOND STUDIO IS THE PERFECT DESCRIPTION. IT'S A COMPLETE ECOSYSTEM FOR MODERN CREATIVES." },
+];
 
 export default function Home() {
   const containerRef = useRef(null);
+  const [testimonialIndex, setTestimonialIndex] = useState(0);
+  const [testimonials, setTestimonials] = useState(fallbackTestimonials);
   const { scrollYProgress } = useScroll({
     target: containerRef,
     offset: ["start start", "end end"],
@@ -20,6 +32,31 @@ export default function Home() {
     { id: "03", title: "Visual Branding", desc: "Graphic design, Photoshop mastery, and building cohesive brand identities.", img: "https://images.unsplash.com/photo-1561070791-2526d30994b5?q=80&w=1000" },
     { id: "04", title: "Direction", desc: "Script writing, storytelling structures, and leading creative execution.", img: "https://images.unsplash.com/photo-1485846234645-a62644f84728?q=80&w=1000" },
   ];
+
+  useEffect(() => {
+    const loadTestimonials = async () => {
+      const { data, error } = await supabase
+        .from("testimonials")
+        .select("id, name, text")
+        .eq("is_active", true)
+        .order("sort_order", { ascending: true });
+
+      if (!error && data?.length) {
+        setTestimonials(data);
+        setTestimonialIndex(0);
+      }
+    };
+
+    loadTestimonials();
+  }, []);
+
+  const nextTestimonials = () => {
+    setTestimonialIndex((prev) => (prev + 3 >= testimonials.length ? 0 : prev + 3));
+  };
+
+  const prevTestimonials = () => {
+    setTestimonialIndex((prev) => Math.max(prev - 3, 0));
+  };
 
   return (
     <div ref={containerRef} className="relative min-h-screen bg-[#f4f4f4] text-[#800000] font-mono selection:bg-[#800000] selection:text-white">
@@ -113,6 +150,67 @@ export default function Home() {
                 <p className="mt-4 text-sm max-w-xs uppercase font-bold opacity-70">
                   {item.desc}
                 </p>
+              </div>
+            </motion.div>
+          ))}
+        </div>
+      </section>
+
+      
+
+      {/* 5.5 TESTIMONIALS SECTION */}
+      <section className="px-6 md:px-10 py-32 border-t border-[#800000]/10 bg-[#f4f4f4]">
+        <div className="flex justify-between items-end mb-16">
+          <div>
+            <p className="text-[10px] font-bold uppercase tracking-[0.3em] mb-4 text-[#800000]/60">{"// Peer_Reviews"}</p>
+            <h2 className="text-5xl md:text-7xl font-black uppercase tracking-tighter">
+              Voices of <br /> <span className="text-transparent" style={{ WebkitTextStroke: "1px #800000" }}>The Lab</span>
+            </h2>
+          </div>
+          
+          <div className="flex flex-wrap justify-end gap-3">
+            {testimonialIndex > 0 && (
+              <button
+                onClick={prevTestimonials}
+                className="group flex items-center gap-4 border border-[#800000] px-8 py-4 font-bold uppercase transition-colors hover:bg-[#800000] hover:text-[#f4f4f4]"
+              >
+                <span className="transition-transform group-hover:-translate-x-2">←</span>
+                <span>Prev Batch</span>
+              </button>
+            )}
+
+            <button 
+              onClick={nextTestimonials}
+              className="group flex items-center gap-4 bg-[#800000] text-[#f4f4f4] px-8 py-4 font-bold uppercase hover:bg-black transition-colors"
+            >
+              <span>Next Batch</span>
+              <span className="group-hover:translate-x-2 transition-transform">→</span>
+            </button>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+          {testimonials.slice(testimonialIndex, testimonialIndex + 3).map((item, idx) => (
+            <motion.div
+              key={`${item.id}-${testimonialIndex}`}
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -20 }}
+              transition={{ duration: 0.5, delay: idx * 0.1 }}
+              className="flex flex-col justify-between p-8 border border-[#800000] min-h-[300px] relative overflow-hidden group hover:bg-[#800000] hover:text-[#f4f4f4] transition-all duration-500"
+            >
+              {/* Decorative corner element */}
+              <div className="absolute top-0 right-0 w-8 h-8 border-b border-l border-[#800000] group-hover:border-[#f4f4f4]" />
+              
+              <div className="relative z-10">
+                <span className="text-4xl font-black opacity-20 group-hover:opacity-100 transition-opacity">&quot;</span>
+                <p className="text-lg font-bold leading-tight uppercase mt-2">
+                  {item.text}
+                </p>
+              </div>
+
+              <div className="mt-12">
+                <p className="text-xl font-black uppercase tracking-tighter">{item.name}</p>
               </div>
             </motion.div>
           ))}

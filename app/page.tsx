@@ -4,29 +4,37 @@ import { motion, useScroll, useTransform, useSpring } from "framer-motion";
 import { useEffect, useRef, useState } from "react";
 import { supabase, type Testimonial } from "@/lib/supabase";
 
-const fallbackTestimonials: Pick<Testimonial, "id" | "name" | "text">[] = [
-  { id: "fallback-1", name: "Arjun Mehta", text: "THE CURRICULUM IS BRUTALLY HONEST. I WENT FROM A HOBBYIST TO A PROFESSIONAL EDITOR IN WEEKS." },
-  { id: "fallback-2", name: "Sara Khan", text: "CREATORSLAB ISN'T A SCHOOL, IT'S A HIGH-PRESSURE PRODUCTION ENVIRONMENT THAT BUILDS REAL SKILLS." },
-  { id: "fallback-3", name: "Kevin Paul", text: "THE FOCUS ON VISUAL STORYTELLING CHANGED HOW I VIEW EVERY FRAME THROUGH THE LENS." },
-  { id: "fallback-4", name: "Riya Sharma", text: "FINALLY, A PLACE THAT VALUES CREATIVE EXECUTION OVER THEORETICAL NONSENSE. HIGHLY RECOMMENDED." },
-  { id: "fallback-5", name: "Leo Das", text: "THE MENTORSHIP HERE IS UNMATCHED. YOU LEARN THE BUSINESS SIDE OF CREATIVITY, NOT JUST THE TOOLS." },
-  { id: "fallback-6", name: "Mona Singh", text: "BEYOND STUDIO IS THE PERFECT DESCRIPTION. IT'S A COMPLETE ECOSYSTEM FOR MODERN CREATIVES." },
+const fallbackTestimonials: Pick<Testimonial, "id" | "name" | "text" | "image_url">[] = [
+  { id: "fallback-1", name: "Arjun Mehta", text: "THE CURRICULUM IS BRUTALLY HONEST. I WENT FROM A HOBBYIST TO A PROFESSIONAL EDITOR IN WEEKS.", image_url: null },
+  { id: "fallback-2", name: "Sara Khan", text: "CREATORSLAB ISN'T A SCHOOL, IT'S A HIGH-PRESSURE PRODUCTION ENVIRONMENT THAT BUILDS REAL SKILLS.", image_url: null },
+  { id: "fallback-3", name: "Kevin Paul", text: "THE FOCUS ON VISUAL STORYTELLING CHANGED HOW I VIEW EVERY FRAME THROUGH THE LENS.", image_url: null },
+  { id: "fallback-4", name: "Riya Sharma", text: "FINALLY, A PLACE THAT VALUES CREATIVE EXECUTION OVER THEORETICAL NONSENSE. HIGHLY RECOMMENDED.", image_url: null },
+  { id: "fallback-5", name: "Leo Das", text: "THE MENTORSHIP HERE IS UNMATCHED. YOU LEARN THE BUSINESS SIDE OF CREATIVITY, NOT JUST THE TOOLS.", image_url: null },
+  { id: "fallback-6", name: "Mona Singh", text: "BEYOND STUDIO IS THE PERFECT DESCRIPTION. IT'S A COMPLETE ECOSYSTEM FOR MODERN CREATIVES.", image_url: null },
 ];
 
 export default function Home() {
   const containerRef = useRef(null);
-  const [testimonialIndex, setTestimonialIndex] = useState(0);
+  const testimonialSectionRef = useRef<HTMLElement | null>(null);
+  const testimonialViewportRef = useRef<HTMLDivElement | null>(null);
+  const testimonialTrackRef = useRef<HTMLDivElement | null>(null);
   const [testimonials, setTestimonials] = useState(fallbackTestimonials);
   const [isDesktop, setIsDesktop] = useState(false);
+  const [testimonialMaxTranslate, setTestimonialMaxTranslate] = useState(0);
   const { scrollYProgress } = useScroll({
     target: containerRef,
+    offset: ["start start", "end end"],
+  });
+  const { scrollYProgress: testimonialScrollProgress } = useScroll({
+    target: testimonialSectionRef,
     offset: ["start start", "end end"],
   });
 
   const scaleX = useSpring(scrollYProgress, { stiffness: 100, damping: 30 });
   const rotateGrid = useTransform(scrollYProgress, [0, 1], [0, 45]);
   const yTranslate = useTransform(scrollYProgress, [0, 1], [0, -150]);
-  const hasMultipleTestimonialBatches = testimonials.length > 3;
+  const testimonialX = useTransform(testimonialScrollProgress, [0, 1], [0, -testimonialMaxTranslate]);
+  const hasHorizontalTestimonials = testimonialMaxTranslate > 0;
 
   const capabilities = [
     { id: "01", title: "Post-Production", desc: "Video Editing, Sound Design, and professional workflows in Premiere & Resolve.", img: "https://images.unsplash.com/photo-1574717024653-61fd2cf4d44d?q=80&w=1000" },
@@ -37,7 +45,9 @@ export default function Home() {
 
   useEffect(() => {
     const desktopQuery = window.matchMedia("(min-width: 768px)");
-    const updateDesktopState = () => setIsDesktop(desktopQuery.matches);
+    const updateDesktopState = () => {
+      setIsDesktop(desktopQuery.matches);
+    };
 
     updateDesktopState();
     desktopQuery.addEventListener("change", updateDesktopState);
@@ -49,26 +59,47 @@ export default function Home() {
     const loadTestimonials = async () => {
       const { data, error } = await supabase
         .from("testimonials")
-        .select("id, name, text")
+        .select("id, name, text, image_url")
         .eq("is_active", true)
         .order("sort_order", { ascending: true });
 
       if (!error && data?.length) {
         setTestimonials(data);
-        setTestimonialIndex(0);
       }
     };
 
     loadTestimonials();
   }, []);
 
-  const nextTestimonials = () => {
-    setTestimonialIndex((prev) => (prev + 3 >= testimonials.length ? 0 : prev + 3));
-  };
+  useEffect(() => {
+    const viewport = testimonialViewportRef.current;
+    const track = testimonialTrackRef.current;
 
-  const prevTestimonials = () => {
-    setTestimonialIndex((prev) => Math.max(prev - 3, 0));
-  };
+    if (!viewport || !track) {
+      return;
+    }
+
+    let frameId = 0;
+    const measureTrack = () => {
+      window.cancelAnimationFrame(frameId);
+      frameId = window.requestAnimationFrame(() => {
+        setTestimonialMaxTranslate(Math.max(track.scrollWidth - viewport.clientWidth, 0));
+      });
+    };
+
+    measureTrack();
+    window.addEventListener("resize", measureTrack);
+
+    const resizeObserver = new ResizeObserver(measureTrack);
+    resizeObserver.observe(viewport);
+    resizeObserver.observe(track);
+
+    return () => {
+      window.cancelAnimationFrame(frameId);
+      window.removeEventListener("resize", measureTrack);
+      resizeObserver.disconnect();
+    };
+  }, [isDesktop, testimonials]);
 
   return (
     <div ref={containerRef} className="relative min-h-screen bg-[#f4f4f4] text-[#800000] font-mono selection:bg-[#800000] selection:text-white">
@@ -171,88 +202,69 @@ export default function Home() {
       
 
       {/* 5.5 TESTIMONIALS SECTION */}
-      <section className="px-6 py-20 md:px-10 md:py-32 border-t border-[#800000]/10 bg-[#f4f4f4]">
-        <div className="flex justify-between items-end mb-10 md:mb-16">
-          <div>
-            <p className="text-[10px] font-bold uppercase tracking-[0.3em] mb-4 text-[#800000]/60">{"// Peer_Reviews"}</p>
+      <section
+        ref={testimonialSectionRef}
+        className="relative border-t border-[#800000]/10 bg-[#f4f4f4]"
+        style={{ height: hasHorizontalTestimonials ? `calc(100vh + ${testimonialMaxTranslate}px)` : undefined }}
+      >
+        <div className="sticky top-0 flex min-h-screen flex-col justify-center overflow-hidden px-6 py-16 md:px-10 md:py-20">
+          <div className="mb-8 flex justify-between md:mb-10">
             <h2 className="text-5xl md:text-7xl font-black uppercase tracking-tighter">
-              Voices of <br /> <span className="text-transparent" style={{ WebkitTextStroke: "1px #800000" }}>The Lab</span>
+              Voices of <span className="text-transparent" style={{ WebkitTextStroke: "1px #800000" }}>The Lab</span>
             </h2>
           </div>
-          
-          {hasMultipleTestimonialBatches && (
-            <div className="hidden flex-wrap justify-end gap-3 md:flex">
-              {testimonialIndex > 0 && (
-                <button
-                  onClick={prevTestimonials}
-                  className="group flex items-center gap-3 border border-[#800000] px-6 py-3 text-sm font-bold uppercase transition-colors hover:bg-[#800000] hover:text-[#f4f4f4]"
-                >
-                  <span className="transition-transform group-hover:-translate-x-1">←</span>
-                  <span>Prev Batch</span>
-                </button>
-              )}
 
-              <button
-                onClick={nextTestimonials}
-                className="group flex items-center gap-3 bg-[#800000] px-6 py-3 text-sm font-bold uppercase text-[#f4f4f4] transition-colors hover:bg-black"
-              >
-                <span>Next Batch</span>
-                <span className="transition-transform group-hover:translate-x-1">→</span>
-              </button>
+          <div ref={testimonialViewportRef} className="overflow-hidden">
+            <motion.div
+              ref={testimonialTrackRef}
+              style={{ x: testimonialX }}
+              className="flex gap-8"
+            >
+              {testimonials.map((item, idx) => (
+                <motion.div
+                  key={item.id}
+                  initial={{ opacity: 0, y: 20 }}
+                  whileInView={{ opacity: 1, y: 0 }}
+                  viewport={{ once: true, amount: 0.2 }}
+                  transition={{ duration: 0.5, delay: idx < 3 ? idx * 0.1 : 0 }}
+                  className="group relative flex min-h-[360px] w-[calc(100vw-3rem)] flex-none flex-col justify-between overflow-hidden border border-[#800000] p-8 transition-all duration-500 hover:bg-[#800000] hover:text-[#f4f4f4] md:w-[calc((100vw-9rem)/3)]"
+                >
+                  {/* Decorative corner element */}
+                  <div className="absolute top-0 right-0 w-8 h-8 border-b border-l border-[#800000] group-hover:border-[#f4f4f4]" />
+                  
+                  <div className="relative z-10">
+                    {item.image_url && (
+                      <div className="mb-6 aspect-[16/9] overflow-hidden border border-[#800000]/40 bg-[#800000]/5 transition-colors group-hover:border-[#f4f4f4]/60">
+                        <img
+                          src={item.image_url}
+                          alt={item.name}
+                          className="h-full w-full object-cover grayscale transition-all duration-700 group-hover:grayscale-0 group-hover:scale-105"
+                        />
+                      </div>
+                    )}
+                    <span className="text-4xl font-black opacity-20 group-hover:opacity-100 transition-opacity">&quot;</span>
+                    <p className="text-lg font-bold leading-tight uppercase mt-2">
+                      {item.text}
+                    </p>
+                  </div>
+
+                  <div className="mt-12">
+                    <p className="text-xl font-black uppercase tracking-tighter">{item.name}</p>
+                  </div>
+                </motion.div>
+              ))}
+            </motion.div>
+          </div>
+
+          {hasHorizontalTestimonials && (
+            <div className="mt-8 h-1 w-full bg-[#800000]/10">
+              <motion.div
+                style={{ scaleX: testimonialScrollProgress }}
+                className="h-full origin-left bg-[#800000]"
+              />
             </div>
           )}
         </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-          {testimonials.slice(testimonialIndex, testimonialIndex + 3).map((item, idx) => (
-            <motion.div
-              key={`${item.id}-${testimonialIndex}`}
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -20 }}
-              transition={{ duration: 0.5, delay: idx * 0.1 }}
-              className="flex flex-col justify-between p-8 border border-[#800000] min-h-[300px] relative overflow-hidden group hover:bg-[#800000] hover:text-[#f4f4f4] transition-all duration-500"
-            >
-              {/* Decorative corner element */}
-              <div className="absolute top-0 right-0 w-8 h-8 border-b border-l border-[#800000] group-hover:border-[#f4f4f4]" />
-              
-              <div className="relative z-10">
-                <span className="text-4xl font-black opacity-20 group-hover:opacity-100 transition-opacity">&quot;</span>
-                <p className="text-lg font-bold leading-tight uppercase mt-2">
-                  {item.text}
-                </p>
-              </div>
-
-              <div className="mt-12">
-                <p className="text-xl font-black uppercase tracking-tighter">{item.name}</p>
-              </div>
-            </motion.div>
-          ))}
-        </div>
-
-        {hasMultipleTestimonialBatches && (
-          <div className="mt-8 grid grid-cols-2 gap-3 md:hidden">
-            {testimonialIndex > 0 ? (
-              <button
-                onClick={prevTestimonials}
-                className="flex min-h-12 items-center justify-center gap-2 border border-[#800000] px-4 py-3 text-xs font-bold uppercase tracking-wide transition-colors hover:bg-[#800000] hover:text-[#f4f4f4]"
-              >
-                <span>←</span>
-                <span>Prev</span>
-              </button>
-            ) : (
-              <div />
-            )}
-
-            <button
-              onClick={nextTestimonials}
-              className="flex min-h-12 items-center justify-center gap-2 bg-[#800000] px-4 py-3 text-xs font-bold uppercase tracking-wide text-[#f4f4f4] transition-colors hover:bg-black"
-            >
-              <span>Next</span>
-              <span>→</span>
-            </button>
-          </div>
-        )}
       </section>
 
       {/* 6. FOOTER */}

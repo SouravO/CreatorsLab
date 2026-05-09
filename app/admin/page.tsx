@@ -1,19 +1,23 @@
 "use client";
 
 import type { FormEvent } from "react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { Session } from "@supabase/supabase-js";
 import { supabase, type Testimonial } from "@/lib/supabase";
 
 type TestimonialForm = {
   name: string;
   text: string;
+  image_url: string | null;
 };
 
 const emptyForm: TestimonialForm = {
   name: "",
   text: "",
+  image_url: null,
 };
+
+const testimonialImagesBucket = "testimonial-images";
 
 export default function AdminPage() {
   const [session, setSession] = useState<Session | null>(null);
@@ -21,6 +25,9 @@ export default function AdminPage() {
   const [password, setPassword] = useState("");
   const [testimonials, setTestimonials] = useState<Testimonial[]>([]);
   const [form, setForm] = useState(emptyForm);
+  const [imageFile, setImageFile] = useState<File | null>(null);
+  const [imagePreviewUrl, setImagePreviewUrl] = useState<string | null>(null);
+  const imagePreviewUrlRef = useRef<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(true);
@@ -67,6 +74,36 @@ export default function AdminPage() {
     return () => data.subscription.unsubscribe();
   }, []);
 
+  useEffect(() => {
+    return () => {
+      if (imagePreviewUrlRef.current) {
+        URL.revokeObjectURL(imagePreviewUrlRef.current);
+      }
+    };
+  }, []);
+
+  const clearImagePreview = () => {
+    if (imagePreviewUrlRef.current) {
+      URL.revokeObjectURL(imagePreviewUrlRef.current);
+      imagePreviewUrlRef.current = null;
+    }
+
+    setImagePreviewUrl(null);
+  };
+
+  const handleImageChange = (file: File | null) => {
+    clearImagePreview();
+    setImageFile(file);
+
+    if (!file) {
+      return;
+    }
+
+    const previewUrl = URL.createObjectURL(file);
+    imagePreviewUrlRef.current = previewUrl;
+    setImagePreviewUrl(previewUrl);
+  };
+
   const handleLogin = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setSaving(true);
@@ -87,8 +124,31 @@ export default function AdminPage() {
   const handleLogout = async () => {
     await supabase.auth.signOut();
     setForm(emptyForm);
+    handleImageChange(null);
     setEditingId(null);
     setMessage("");
+  };
+
+  const uploadImage = async () => {
+    if (!imageFile) {
+      return form.image_url;
+    }
+
+    const extension = imageFile.name.split(".").pop()?.toLowerCase() || "jpg";
+    const filePath = `${crypto.randomUUID()}.${extension}`;
+    const { error } = await supabase.storage
+      .from(testimonialImagesBucket)
+      .upload(filePath, imageFile, {
+        cacheControl: "3600",
+        upsert: false,
+      });
+
+    if (error) {
+      throw new Error(error.message);
+    }
+
+    const { data } = supabase.storage.from(testimonialImagesBucket).getPublicUrl(filePath);
+    return data.publicUrl;
   };
 
   const handleSave = async (event: FormEvent<HTMLFormElement>) => {
@@ -102,12 +162,23 @@ export default function AdminPage() {
       return;
     }
 
+    let imageUrl: string | null;
+
+    try {
+      imageUrl = await uploadImage();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Image upload failed.");
+      setSaving(false);
+      return;
+    }
+
     if (editingId) {
       const { error } = await supabase
         .from("testimonials")
         .update({
           name: form.name.trim(),
           text: form.text.trim(),
+          image_url: imageUrl,
         })
         .eq("id", editingId);
 
@@ -116,6 +187,7 @@ export default function AdminPage() {
       } else {
         setMessage("Testimonial updated.");
         setForm(emptyForm);
+        handleImageChange(null);
         setEditingId(null);
         await loadTestimonials();
       }
@@ -124,6 +196,7 @@ export default function AdminPage() {
       const { error } = await supabase.from("testimonials").insert({
         name: form.name.trim(),
         text: form.text.trim(),
+        image_url: imageUrl,
         sort_order: lastOrder + 1,
         is_active: true,
       });
@@ -133,6 +206,7 @@ export default function AdminPage() {
       } else {
         setMessage("Testimonial added.");
         setForm(emptyForm);
+        handleImageChange(null);
         await loadTestimonials();
       }
     }
@@ -145,13 +219,16 @@ export default function AdminPage() {
     setForm({
       name: testimonial.name,
       text: testimonial.text,
+      image_url: testimonial.image_url,
     });
+    handleImageChange(null);
     setMessage("");
   };
 
   const cancelEditing = () => {
     setEditingId(null);
     setForm(emptyForm);
+    handleImageChange(null);
     setMessage("");
   };
 
@@ -291,6 +368,38 @@ export default function AdminPage() {
               />
             </label>
 
+            <label className="mb-4 block">
+              <span className="mb-2 block text-[10px] font-bold uppercase tracking-widest">Student Image</span>
+              <input
+                type="file"
+                accept="image/*"
+                onChange={(event) => handleImageChange(event.target.files?.[0] ?? null)}
+                className="w-full border border-[#800000] bg-transparent px-4 py-3 text-xs font-bold uppercase outline-none file:mr-4 file:border-0 file:bg-[#800000] file:px-4 file:py-2 file:text-xs file:font-black file:uppercase file:text-[#f4f4f4]"
+              />
+            </label>
+
+            {(imageFile || form.image_url) && (
+              <div className="mb-6 border border-[#800000]/40 p-3">
+                <div className="aspect-[16/9] overflow-hidden bg-[#800000]/5">
+                  <img
+                    src={imagePreviewUrl ?? form.image_url ?? ""}
+                    alt="Selected testimonial"
+                    className="h-full w-full object-cover grayscale"
+                  />
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    handleImageChange(null);
+                    setForm((prev) => ({ ...prev, image_url: null }));
+                  }}
+                  className="mt-3 border border-[#800000] px-4 py-2 text-[10px] font-black uppercase tracking-widest transition-colors hover:bg-[#800000] hover:text-[#f4f4f4]"
+                >
+                  Remove Image
+                </button>
+              </div>
+            )}
+
             <div className="flex gap-3">
               <button
                 type="submit"
@@ -325,6 +434,15 @@ export default function AdminPage() {
                 <p className="mb-4 text-[10px] font-bold uppercase tracking-widest text-[#800000]/60">
                   Student_Ref // {String(index + 1).padStart(2, "0")}
                 </p>
+                {testimonial.image_url && (
+                  <div className="mb-5 aspect-[16/9] overflow-hidden border border-[#800000]/40 bg-[#800000]/5">
+                    <img
+                      src={testimonial.image_url}
+                      alt={testimonial.name}
+                      className="h-full w-full object-cover grayscale"
+                    />
+                  </div>
+                )}
                 <p className="text-lg font-bold uppercase leading-tight">{testimonial.text}</p>
               </div>
 

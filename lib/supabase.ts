@@ -4,6 +4,7 @@ export type Testimonial = {
   id: string;
   name: string;
   text: string;
+  image_url: string | null;
   sort_order: number;
   is_active: boolean;
   created_at: string;
@@ -18,6 +19,7 @@ type Database = {
           id?: string;
           name: string;
           text: string;
+          image_url?: string | null;
           sort_order?: number;
           is_active?: boolean;
           created_at?: string;

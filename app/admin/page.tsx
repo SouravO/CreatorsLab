@@ -1,9 +1,9 @@
 "use client";
 
 import type { FormEvent } from "react";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { Session } from "@supabase/supabase-js";
-import { supabase, type Testimonial } from "@/lib/supabase";
+import { createIsolatedSupabaseClient, type Testimonial } from "@/lib/supabase";
 
 type TestimonialForm = {
   name: string;
@@ -18,6 +18,8 @@ const emptyForm: TestimonialForm = {
 };
 
 const testimonialImagesBucket = "testimonial-images";
+const adminSessionStorageKey = "creatorslab-admin-session";
+const sessionRefreshBufferMs = 5 * 60 * 1000;
 
 export default function AdminPage() {
   const [session, setSession] = useState<Session | null>(null);
@@ -32,9 +34,89 @@ export default function AdminPage() {
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const adminSupabaseRef = useRef(createIsolatedSupabaseClient());
+  const authSupabaseRef = useRef(createIsolatedSupabaseClient());
+  const sessionRef = useRef<Session | null>(null);
 
-  const loadTestimonials = async () => {
-    const { data, error } = await supabase
+  const saveAdminSession = useCallback((nextSession: Session) => {
+    window.localStorage.setItem(adminSessionStorageKey, JSON.stringify(nextSession));
+  }, []);
+
+  const readAdminSession = useCallback(() => {
+    try {
+      const storedSession = window.localStorage.getItem(adminSessionStorageKey);
+
+      if (!storedSession) {
+        return null;
+      }
+
+      const parsedSession = JSON.parse(storedSession) as Partial<Session>;
+
+      if (!parsedSession.access_token || !parsedSession.refresh_token) {
+        return null;
+      }
+
+      return parsedSession as Session;
+    } catch {
+      return null;
+    }
+  }, []);
+
+  const clearAdminSession = useCallback(() => {
+    window.localStorage.removeItem(adminSessionStorageKey);
+  }, []);
+
+  const activateSession = useCallback((nextSession: Session) => {
+    sessionRef.current = nextSession;
+    adminSupabaseRef.current = createIsolatedSupabaseClient(nextSession.access_token);
+    saveAdminSession(nextSession);
+    setSession(nextSession);
+  }, [saveAdminSession]);
+
+  const clearSession = useCallback(() => {
+    sessionRef.current = null;
+    adminSupabaseRef.current = createIsolatedSupabaseClient();
+    clearAdminSession();
+    setSession(null);
+    setTestimonials([]);
+  }, [clearAdminSession]);
+
+  const ensureActiveSession = useCallback(async () => {
+    const currentSession = sessionRef.current;
+
+    if (!currentSession) {
+      return null;
+    }
+
+    const expiresAt = currentSession.expires_at ? currentSession.expires_at * 1000 : 0;
+    const shouldRefresh = expiresAt > 0 && expiresAt - Date.now() < sessionRefreshBufferMs;
+
+    if (!shouldRefresh) {
+      return currentSession;
+    }
+
+    const { data, error } = await authSupabaseRef.current.auth.refreshSession({
+      refresh_token: currentSession.refresh_token,
+    });
+
+    if (error || !data.session) {
+      clearSession();
+      setMessage(error?.message ?? "Session expired. Please sign in again.");
+      return null;
+    }
+
+    activateSession(data.session);
+    return data.session;
+  }, [activateSession, clearSession]);
+
+  const loadTestimonials = useCallback(async () => {
+    const activeSession = await ensureActiveSession();
+
+    if (!activeSession) {
+      return;
+    }
+
+    const { data, error } = await adminSupabaseRef.current
       .from("testimonials")
       .select("*")
       .order("sort_order", { ascending: true });
@@ -45,15 +127,21 @@ export default function AdminPage() {
     }
 
     setTestimonials(data ?? []);
-  };
+  }, [ensureActiveSession]);
 
   useEffect(() => {
-    const setupSession = async () => {
-      const { data } = await supabase.auth.getSession();
-      setSession(data.session);
+    let isMounted = true;
 
-      if (data.session) {
-        await loadTestimonials();
+    const setupSession = async () => {
+      const storedSession = readAdminSession();
+
+      if (!isMounted) {
+        return;
+      }
+
+      if (storedSession) {
+        activateSession(storedSession);
+        void loadTestimonials();
       }
 
       setLoading(false);
@@ -61,18 +149,10 @@ export default function AdminPage() {
 
     setupSession();
 
-    const { data } = supabase.auth.onAuthStateChange((_event, nextSession) => {
-      setSession(nextSession);
-
-      if (nextSession) {
-        loadTestimonials();
-      } else {
-        setTestimonials([]);
-      }
-    });
-
-    return () => data.subscription.unsubscribe();
-  }, []);
+    return () => {
+      isMounted = false;
+    };
+  }, [activateSession, loadTestimonials, readAdminSession]);
 
   useEffect(() => {
     return () => {
@@ -109,20 +189,24 @@ export default function AdminPage() {
     setSaving(true);
     setMessage("");
 
-    const { error } = await supabase.auth.signInWithPassword({
+    const { data, error } = await authSupabaseRef.current.auth.signInWithPassword({
       email,
       password,
     });
 
     if (error) {
       setMessage(error.message);
+    } else if (data.session) {
+      activateSession(data.session);
+      setPassword("");
+      await loadTestimonials();
     }
 
     setSaving(false);
   };
 
   const handleLogout = async () => {
-    await supabase.auth.signOut();
+    clearSession();
     setForm(emptyForm);
     handleImageChange(null);
     setEditingId(null);
@@ -136,7 +220,13 @@ export default function AdminPage() {
 
     const extension = imageFile.name.split(".").pop()?.toLowerCase() || "jpg";
     const filePath = `${crypto.randomUUID()}.${extension}`;
-    const { error } = await supabase.storage
+    const activeSession = await ensureActiveSession();
+
+    if (!activeSession) {
+      throw new Error("Session expired. Please sign in again.");
+    }
+
+    const { error } = await adminSupabaseRef.current.storage
       .from(testimonialImagesBucket)
       .upload(filePath, imageFile, {
         cacheControl: "3600",
@@ -147,7 +237,7 @@ export default function AdminPage() {
       throw new Error(error.message);
     }
 
-    const { data } = supabase.storage.from(testimonialImagesBucket).getPublicUrl(filePath);
+    const { data } = adminSupabaseRef.current.storage.from(testimonialImagesBucket).getPublicUrl(filePath);
     return data.publicUrl;
   };
 
@@ -173,7 +263,14 @@ export default function AdminPage() {
     }
 
     if (editingId) {
-      const { error } = await supabase
+      const activeSession = await ensureActiveSession();
+
+      if (!activeSession) {
+        setSaving(false);
+        return;
+      }
+
+      const { error } = await adminSupabaseRef.current
         .from("testimonials")
         .update({
           name: form.name.trim(),
@@ -192,8 +289,15 @@ export default function AdminPage() {
         await loadTestimonials();
       }
     } else {
+      const activeSession = await ensureActiveSession();
+
+      if (!activeSession) {
+        setSaving(false);
+        return;
+      }
+
       const lastOrder = testimonials.at(-1)?.sort_order ?? 0;
-      const { error } = await supabase.from("testimonials").insert({
+      const { error } = await adminSupabaseRef.current.from("testimonials").insert({
         name: form.name.trim(),
         text: form.text.trim(),
         image_url: imageUrl,
@@ -242,7 +346,14 @@ export default function AdminPage() {
     setSaving(true);
     setMessage("");
 
-    const { error } = await supabase.from("testimonials").delete().eq("id", id);
+    const activeSession = await ensureActiveSession();
+
+    if (!activeSession) {
+      setSaving(false);
+      return;
+    }
+
+    const { error } = await adminSupabaseRef.current.from("testimonials").delete().eq("id", id);
 
     if (error) {
       setMessage(error.message);

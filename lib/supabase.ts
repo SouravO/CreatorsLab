@@ -10,7 +10,7 @@ export type Testimonial = {
   created_at: string;
 };
 
-type Database = {
+export type Database = {
   public: {
     Tables: {
       testimonials: {
@@ -42,4 +42,24 @@ if (!supabaseUrl || !supabaseKey) {
   throw new Error("Missing Supabase environment variables.");
 }
 
-export const supabase = createClient<Database>(supabaseUrl, supabaseKey);
+const browserOnlyAuthOptions = {
+  autoRefreshToken: false,
+  detectSessionInUrl: false,
+  persistSession: false,
+};
+
+export const supabase = createClient<Database>(supabaseUrl, supabaseKey, {
+  auth: browserOnlyAuthOptions,
+});
+
+export const createIsolatedSupabaseClient = (accessToken?: string) =>
+  createClient<Database>(supabaseUrl, supabaseKey, {
+    auth: browserOnlyAuthOptions,
+    global: accessToken
+      ? {
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+          },
+        }
+      : undefined,
+  });
